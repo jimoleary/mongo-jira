@@ -1,0 +1,3 @@
+<%= @ticket.key  %> - <%= @ticket.priority %>
+<%= @ticket.summary %>
+<%= @ticket.company %><%= @ticket.fix_versions.empty? ? '' : " - #{@ticket.fix_versions.join(',')}" %>

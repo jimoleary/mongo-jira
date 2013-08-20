@@ -1,0 +1,5 @@
+<%= '=' * 40 %>
+
+<\%= color("<%= @comment.display_name%> (<%= @comment.name%>)", <%= @comment.tengen? ? ':tengen' : ':customer' %>) \%> - <%= @comment.updated %> - <\%= color("<%= @comment.visibility %>", "<%= @comment.visibility %>") \%>
+
+<%= @comment.body %>

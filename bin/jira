@@ -1,5 +1,4 @@
 #!/usr/bin/env ruby
-require "mongo/jira/version"
 
 require 'commander/import'
 require 'jira'
@@ -8,20 +7,32 @@ require 'json'
 require 'ruby-progressbar'
 
 $config = "#{ENV['HOME']}/.mongo-jira.json"
-$level = 0
+
 tengen = HighLine::ColorScheme.new do |cs|
   cs[:released] = [:bold, :green]
   cs[:rc] = [:bold, :cyan]
   cs[:error] = [:bold, :red]
   cs[:password] = [:red]
-  cs[:dev_only] = [:bold, :reverse]
+  cs[:Developers] = [:bold, :reverse, :green]
+  cs[:Customers] = [:bold, :reverse, :red]
+  cs[:Everybody] = [:bold]
+
   cs[:tengen] = [:bold, :green]
+  cs[:customer] = []
   cs[:downloaded] = [:green]
   cs[:p1] = [:bold, :red]
   cs[:p2] = [:red]
   cs[:p3] = [:cyan]
   cs[:p4] = [:green]
   cs[:p5] = [:green]
+
+  cs[:unresolved] = [:bold, :red]
+  cs[:fixed] = [:bold, :green]
+  cs[:inprogress] = [:bold, :green]
+  cs[:waitingforcustomer] = [:bold, :reverse, :red]
+  cs[:open] = [:reverse, :red]
+  cs[:closed] = [:bold, :reverse, :green]
+  cs[:resolved] = [:bold, :reverse, :green]
 end
 HighLine.color_scheme = tengen
 
@@ -32,6 +43,15 @@ error: SSL_connect returned=1 errno=0 state=SSLv3 read server certificate B: cer
     Try :
 
         rvm osx-ssl-certs update all
+
+    If you get an error with the following :
+
+      `require': cannot load such file -- mkmf (LoadError)
+
+    Then try :
+
+      sudo apt-get install ruby-dev
+
 END
 
 program(:help, 'Reporting Errors',<<END)
@@ -52,8 +72,25 @@ I've tested the gem with the following ruby versions:
 
 END
 
+$level=0
+$jabberrc=nil
+$jabber=nil
+$limit=nil
+$growl=[]
+$view='terminal'
+
 global_option('-c', '--creds FILE', 'Load config data for your commands to use') { |file| $config = file }
 global_option('-V', 'increment verbosity level, i.e. -VV for higher debug level') { $level += 1}
+
+global_option('--jabber DETAILS', 'the jabber details {from:"from", to:["the-to]",password:"wwwwXXXXyyyyZZZZ"}') {|jabber|$jabber=jabber}
+global_option('--jabberrc FILE', 'the jabberrc file') {|jabberrc |$jabberrc=jabberrc}
+global_option('--limit [limit]', 'limit the results set ') {|limit|$limit=limit}
+
+global_option('--growl', 'growl the results set to localhost') {$growl<<%w(localhost)}
+global_option('--growl-to=a,b,c',Array, 'growl the results set ') {|hosts| $growl<<[hosts]}
+
+global_option('--view view', 'render with terminal,plain,short') {|view| $view=view}
+global_option('--as type', 'render as view can be header, ticket,id') {|as| $as=as}
 
 default_command :show
 
@@ -65,7 +102,7 @@ command :init do |c|
   c.action do
     if Mongo::Jira::Config::check($config)
       exit 1 unless agree("#{$config} exists, <%= color('Overwrite?', RED) %> ")
-      end
+    end
 
     conf = {}
     conf[:username] = prompt('username', 'jim.oleary@10gen.com')
@@ -125,12 +162,13 @@ END
       end
       trace JSON.pretty_generate(ticket.attrs) if ticket
 
+      trace "options #{options.to}"
       #noinspection RubyResolve
       ticket.attachments.each do |attachment|
         trace JSON.pretty_generate(attachment.attrs)
         u = URI.parse(attachment.content)
         parts = u.path.split('/')#[2..-1].join('/')
-        to = options.to.nil? ? tid  : parts[2]
+        to = options.to.nil? ? tid  : options.to
         trace "to -> #{to}"
         if options.flatten
           target = [to, parts.last]
@@ -192,11 +230,18 @@ command :projects do |c|
   c.summary = 'list all the projects'
   c.description = ''
   c.example 'description', 'command example'
-  c.action do |args|
-    glob = args.first || '.*'
-    client.projects.each do |project|
-      say "#{project.key} - #{project.name}" if project.key =~ %r{#{glob}}
+  c.action do |args,options|
+    if args.length == 0
+      globs= %w(*)
+    else
+      globs = args.collect{|g| "*#{g.chomp}*"}
     end
+
+    all = client.projects
+    projects = all.find_all{|p| globs.any?{|g|File.fnmatch(g, p.key)} }
+    projects= limit(projects, $limit)
+
+    say render(projects,{:reverse=>options.reverse, :view => $view},($as ||:project))
   end
 end
 
@@ -214,36 +259,19 @@ command :show do |c|
 END
   c.option '--reverse', 'print the comments in reverse order'
   c.action do |args, options|
-    (args || %w(.*)).each do |tid|
-      ticket = client.find(tid)
-      next unless ticket
-      trace JSON.pretty_generate(ticket.attrs)
-      desc = Proc.new do
-        say <<END
-  #{header(ticket).join(' - ')}
-
-  #{('-' * 40)}
-
-  #{ticket.description}
-END
-      end
-
-      desc.call() unless  options.reverse
-
-      comments = ticket.comment['comments']
-      comments.reverse! if options.reverse
-      comments.each do |cmnt|
-        say <<END
-
-  #{'=' * 40}
-
-  #{comment(cmnt).join(' - ')}
-
-  #{cmnt['body']}
-END
-      end
-      desc.call() if  options.reverse
+    if args.length == 0
+      command(:help).run()
+      next
     end
+
+    tickets = args.collect {|tid| client.find(tid)}.tap{|t| trace JSON.pretty_generate(t.attrs)}
+    tickets = limit(tickets, $limit)
+
+    tickets.each do |ticket|
+      say render(Mongo::Jira::Model::Ticket.new(ticket),{:reverse=>options.reverse, :view => $view},($as ||:ticket))
+    end
+    jabber(tickets, options)
+    growler(tickets, options)
   end
 end
 alias_command :ticket, :show
@@ -254,14 +282,18 @@ command :open do |c|
   c.description = 'open a ticket in the browser'
   c.example 'description', 'jira open pr-1111'
   c.option '--some-switch', 'Some switch that does something'
-  c.action do |args|
-    (args || %w(.*)).each do |tid|
-      ticket = client.find(tid)
-      if ticket
-        trace JSON.pretty_generate(ticket.attrs)
-        %x{open 'https://jira.mongodb.org/browse/#{tid}'}
-      end
+  c.action do |args, options|
+    tickets = (args || %w(.*)).collect  {|tid| client.find(tid) }
+
+    tickets = limit(tickets, $limit)
+
+    tickets.each do |ticket|
+      trace JSON.pretty_generate(ticket.attrs)
+      %x{open 'https://jira.mongodb.org/browse/#{ticket.key}'}
     end
+
+    jabber(tickets, options)
+    growler(tickets, options)
   end
 end
 
@@ -282,13 +314,16 @@ Sample queries :
     $> jira query 'assignee is EMPTY AND status in  ("waiting for customer") ORDER BY updated DESC '
 END
   c.example 'description', 'command example'
-  c.action do |args|
+  c.action do |args, options|
     q = args.join(' ')
     debug ":find '#{q}'"
-    client.jql(q).each do |ticket|
-      trace JSON.pretty_generate(ticket.attrs)
-      say header(ticket).join(' - ')
-    end
+    all = query(q)
+    tickets = limit(all,$limit)
+
+    tickets.each{|ticket| say render(Mongo::Jira::Model::Ticket.new(ticket),{:reverse=>options.reverse, :view => $view}, ($as || :header))}
+
+    jabber(tickets, options)
+    growler(tickets, options)
   end
 end
 
@@ -307,19 +342,101 @@ END
     pattern = args.join(' ')
     q = %w{ summary description comment}.collect { |field| "#{field} ~ '#{pattern}'" }.join(' OR ')
     debug ":find '#{q}'"
-    client.jql(q).each do |ticket|
+    all = client.jql(q).collect
+
+    tickets = limit(all,$limit)
+
+    tickets.each do |ticket|
       trace JSON.pretty_generate(ticket.attrs)
-      say header(ticket).join(' - ')
+      say render(Mongo::Jira::Model::Ticket.new(ticket),{:reverse=>options.reverse, :view => $view}, ($as ||:header))
     end
+
+    jabber(tickets, options)
+    growler(tickets, options)
   end
 end
 
-def debug(*args)
-  puts args.join if $level > 0
+
+def limit(tickets,limit=nil)
+  debug "limit #{tickets.length} -> #{limit}"
+  tickets = [tickets].flatten.compact
+  return tickets if tickets.empty? || limit.nil?
+  limit = limit.to_i - 1
+  debug "limit #{tickets.length} -> #{limit}"
+  t = if limit <=0
+    [tickets.first]
+  else
+    tickets[0..limit]
+  end
+  debug "limit #{t.length} -> #{limit}"
+  t
 end
 
+def query(q,plain=false)
+  debug "plain = #{plain}"
+  client.jql(q).collect do |ticket|
+    trace JSON.pretty_generate(ticket.attrs)
+    ticket
+  end
+end
+
+def jabber(tickets,options)
+  return if tickets.empty?
+
+  jconf = nil
+  jconf = JSON.parse($jabber) if $jabber
+  jconf = JSON.parse(IO.read($jabberrc)) if !jconf && $jabberrc
+
+  jconf.symbolize_keys!() if jconf
+
+  j = nil
+  j = Mongo::Jira::Jabber.new(jconf) if jconf && jconf[:to]
+
+  if j
+    message = tickets.collect{|ticket|
+      render(Mongo::Jira::Model::Ticket.new(ticket),{:reverse=>options.reverse, :view => $view}, ($as ||:id))
+    }
+    j.talk(jconf[:to], 'new tickets' , message.join("\n"))
+  end
+end
+
+def growler(tickets,options)
+  return if tickets.empty?
+
+  $growl.flatten!
+  $growl.uniq!
+  if $growl.length > 0
+    tickets.each{|ticket|
+      message = render(Mongo::Jira::Model::Ticket.new(ticket),{:reverse=>options.reverse, :view => 'growler'}, ($as ||:ticket))
+      $growl.each{|host|notify_info(message , :host=>host)}
+    }
+  end
+end
+
+
+TRACE=4
+DEBUG=3
+LOG=2
+INFO=1
+
+# -VVVV
 def trace(*args)
-  puts args.join if $level > 1
+  puts args.join if $level >= TRACE
+end
+
+# -VVV
+def debug(*args)
+  puts (args||['no args']).join if $level >= DEBUG
+end
+
+# -VV
+def log(*args)
+  puts (args||['no args']).join if $level >=LOG
+end
+
+# -V
+def info(*args)
+  puts (args||['no args']).join if $level >= INFO
 end
 
 def client(config=$config)
@@ -339,76 +456,17 @@ def prompt(name, default=nil)
   ask("#{name} (<%= color(\"#{default}\", RED) %>) ? ", lambda { |v| v.blank? ? default : v })
 end
 
+def render(ticket, o={},type=nil)
+  @renderer ||= Mongo::Jira::Render::View.new()
+  @renderer.options = o
+  @renderer.render(ticket,type)
+end
+
 class Object
   def try(name,*args)
     self.send(name,args) rescue nil
   end
 end unless self.respond_to?(:try)
-
-def header(ticket)
-  [ticket.key.ljust(15) ,ticket.summary , fix_versions(ticket), priority(ticket),company(ticket)].compact
-end
-
-def comment(comment)
-  hdr = "#{comment['author']['displayName']} (#{comment['author']['name']})"
-  hdr = "<%= color(\"#{hdr}\", :tengen) %>" if comment['author']['emailAddress'] =~ /@10gen.com$/
-
-  trace JSON.pretty_generate(comment)
-  dev_only = case (comment['visibility']||{})['value']
-               when /developer/i
-                 "<%= color('Dev Only', :dev_only) %>"
-               when /customer/i
-                 "<%= color('Customer Only', :dev_only) %>"
-               else
-                 nil
-             end
-
-  [hdr , DateTime.parse(comment['updated']).strftime('%D %T'), dev_only].compact
-end
-
-FIELD = 'customfield_10030'
-def company(ticket)
-  ticket.attrs['fields'][FIELD]["name"] if ticket.attrs['fields'] && ticket.attrs['fields'][FIELD]
-end
-
-def fix_versions(ticket)
-  if ticket.try(:fixVersions)
-    trace "fixVersions #{JSON.pretty_generate(ticket.fixVersions)}"
-    unless ticket.fixVersions.compact.empty?
-      labels = ticket.fixVersions.collect do |v|
-        c = case v['name']
-              when /^\d+\.(0|2|4|6|8)/
-                ':released'
-              when /^\d+\.(1|3|5|7|9)/
-                ':rc'
-              else
-                ':error'
-            end
-        "<%= color(\"#{v['name']}\", #{c}) %>"
-      end
-      labels.join(',')
-    end
-  else
-    nil
-  end
-end
-
-def priority(ticket)
-    c = ':error'
-    if ticket.respond_to?(:priority)
-      trace "priority #{JSON.pretty_generate(ticket.priority.attrs)}"
-      c = case ticket.priority.attrs['name']
-      when /p1$/i ; ':p1'
-      when /p2$/i ; ':p2'
-      when /p3$/i ; ':p3'
-      when /p4$/i ; ':p4'
-      when /p5$/i ; ':p5'
-      else
-        ':error'
-      end
-    end
-    "<%= color(\"#{ticket.priority.attrs['name']}\", #{c}) %>"
-end
 
 class DummyProgressBar
   def initialize(s)

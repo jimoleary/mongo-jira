@@ -1,0 +1,1 @@
+<%= @ticket.key.ljust(15) %> - <%= @ticket.summary %> - <%= @ticket.status %> - <%= @ticket.fix_versions.empty? ? '' : "  - (#{@ticket.fix_versions.join(',')})" %>

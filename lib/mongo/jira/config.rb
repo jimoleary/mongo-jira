@@ -1,6 +1,6 @@
 require 'openssl'
 begin
-  require 'Base64s'
+  require 'base64'
 rescue LoadError
   module Base64
     def decode64(str)
@@ -12,7 +12,6 @@ rescue LoadError
   end
 end
 require 'digest'
-require 'mongo/jira/config_exception'
 
 module Mongo
   module Jira
@@ -35,6 +34,17 @@ module Mongo
         File::exists?(filename)
       end
 
+      # save the config file
+      #
+      # @example write the config file
+      #   Mongo::Jira::Config::check()
+      #   Mongo::Jira::Config::check("/tmp/.jira.json")
+      #
+      # @param [ String ] filename The config file path. It defaults to "#{ENV['HOME']}/.mongo_jira.json"
+      #
+      # @return [ true, false ] If the config is ok.
+      #
+      # @since 0.0.1
       def self.save(config, filename)
         cpy = config.clone
         if config[:password]
@@ -62,17 +72,6 @@ module Mongo
         config[:password] = Mongo::Jira::Config::decrypt("password", config[:password]) if config[:password]
       end
 
-      # save the config file
-      #
-      # @example write the config file
-      #   Mongo::Jira::Config::check()
-      #   Mongo::Jira::Config::check("/tmp/.jira.json")
-      #
-      # @param [ String ] filename The config file path. It defaults to "#{ENV['HOME']}/.mongo_jira.json"
-      #
-      # @return [ true, false ] If the config is ok.
-      #
-      # @since 0.0.1
       def save
         Mongo::Jira::Config::save(config,filename)
       end
@@ -105,5 +104,6 @@ module Mongo
       end
 
     end
+    class ConfigException < StandardError; end
   end
 end

@@ -9,7 +9,7 @@ Gem::Specification.new do |s|
   s.platform    = Gem::Platform::RUBY
   s.authors = ['Jim O\'Leary']
   s.email = %q{jim.oleary@gmail.com}
-  s.homepage = %q{http://rubygems.org/gems/mongo_jira}
+  s.homepage = %q{http://rubygems.org/gems/mongo-jira}
   s.summary = %q{Simple Mongo Jira command line tools}
   s.description = %q{Easy/Simple Jira command line tool}
   s.rubyforge_project = 'mongo_jira'
@@ -26,4 +26,6 @@ Gem::Specification.new do |s|
   s.add_dependency 'jira-ruby'#,    ['>= 0.1.2']
   s.add_dependency 'commander'#,    ['>= 4.1.5']
   s.add_dependency 'ruby-progressbar'#,    ['>= 1.2.0']
+  s.add_dependency 'xmpp4r'#,    ['>= 1.2.0']
+  s.add_dependency 'erubis'#,    ['>= 1.2.0']
 end

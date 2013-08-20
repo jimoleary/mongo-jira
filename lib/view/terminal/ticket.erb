@@ -1,0 +1,9 @@
+<%= render(@ticket,:header) unless @reverse %>
+
+<%= @ticket.description unless @reverse %>
+
+<%= render(@ticket.comments.send((@reverse ? :reverse : :to_a))) %>
+
+<%= render(@ticket,:header) if @reverse%>
+
+<%= @ticket.description if @reverse %>
