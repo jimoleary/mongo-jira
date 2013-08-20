@@ -8,7 +8,7 @@ Gem::Specification.new do |s|
   s.version            = Mongo::Jira::VERSION #'0.0.0'
   s.platform    = Gem::Platform::RUBY
   s.authors = ['Jim O\'Leary']
-  s.email = %q{jim.oleary@10gen.com}
+  s.email = %q{jim.oleary@gmail.com}
   s.homepage = %q{http://rubygems.org/gems/mongo_jira}
   s.summary = %q{Simple Mongo Jira command line tools}
   s.description = %q{Easy/Simple Jira command line tool}
