@@ -1,8 +1,9 @@
 #!/usr/bin/env ruby
+require "mongo/jira/version"
 
 require 'commander/import'
 require 'jira'
-require 'mongo_jira'
+require 'mongo/jira'
 require 'json'
 require 'ruby-progressbar'
 
@@ -62,7 +63,7 @@ command :init do |c|
   c.description = 'This command will walk you through the account details that are needed.'
   c.example 'description', 'jira init'
   c.action do
-    if MongoJira::Config::check($config)
+    if Mongo::Jira::Config::check($config)
       exit 1 unless agree("#{$config} exists, <%= color('Overwrite?', RED) %> ")
       end
 
@@ -73,7 +74,7 @@ command :init do |c|
     conf[:auth_type] = prompt('auth_type', 'basic')
     conf.delete(:password) if conf[:password].blank?
 
-    MongoJira::Config::save(conf, $config)
+    Mongo::Jira::Config::save(conf, $config)
   end
 end
 
@@ -323,10 +324,10 @@ end
 
 def client(config=$config)
   $jira ||= begin
-    jira = MongoJira::Jira.new(config)
+    jira = Mongo::Jira::Main.new(config)
     jira.password = ask('Password:  ') { |q| q.echo = '*' } unless jira.password?
     jira
-  rescue MongoJira::ConfigException
+  rescue Mongo::Jira::ConfigException
     say("\n  <%= color('UNEXPECTED ERROR', :error) %>\n\n    conf file not found :: <%= color(\"#{config}\", RED) %>\n")
     command(:help).run('init')
     abort ''
