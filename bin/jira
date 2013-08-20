@@ -55,7 +55,7 @@ END
 global_option('-c', '--creds FILE', 'Load config data for your commands to use') { |file| $config = file }
 global_option('-V', 'increment verbosity level, i.e. -VV for higher debug level') { $level += 1}
 
-default_command :projects
+default_command :show
 
 command :init do |c|
   c.syntax = 'jira init [options]'
@@ -339,8 +339,14 @@ def prompt(name, default=nil)
   ask("#{name} (<%= color(\"#{default}\", RED) %>) ? ", lambda { |v| v.blank? ? default : v })
 end
 
+class Object
+  def try(name,*args)
+    self.send(name,args) rescue nil
+  end
+end unless self.respond_to?(:try)
+
 def header(ticket)
-  [ticket.key.ljust(15) ,ticket.summary , fix_versions(ticket), priority(ticket)].compact
+  [ticket.key.ljust(15) ,ticket.summary , fix_versions(ticket), priority(ticket),company(ticket)].compact
 end
 
 def comment(comment)
@@ -358,6 +364,11 @@ def comment(comment)
              end
 
   [hdr , DateTime.parse(comment['updated']).strftime('%D %T'), dev_only].compact
+end
+
+FIELD = 'customfield_10030'
+def company(ticket)
+  ticket.attrs['fields'][FIELD]["name"] if ticket.attrs['fields'] && ticket.attrs['fields'][FIELD]
 end
 
 def fix_versions(ticket)
@@ -383,6 +394,7 @@ def fix_versions(ticket)
 end
 
 def priority(ticket)
+    c = ':error'
     if ticket.respond_to?(:priority)
       trace "priority #{JSON.pretty_generate(ticket.priority.attrs)}"
       c = case ticket.priority.attrs['name']
