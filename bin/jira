@@ -21,7 +21,7 @@ tengen = HighLine::ColorScheme.new do |cs|
   cs[:p2] = [:red]
   cs[:p3] = [:cyan]
   cs[:p4] = [:green]
-  cs[:p4] = [:green]
+  cs[:p5] = [:green]
 end
 HighLine.color_scheme = tengen
 
@@ -383,19 +383,19 @@ def fix_versions(ticket)
 end
 
 def priority(ticket)
-  if ticket.respond_to?(:priority)
-    trace "priority #{JSON.pretty_generate(ticket.priority.attrs)}"
-    c = case ticket.priority.attrs['name']
-    when /p1$/i ; ':p1'
-    when /p2$/i ; ':p2'
-    when /p3$/i ; ':p3'
-    when /p4$/i ; ':p4'
-    when /p5$/i ; ':p5'
-    else
-      ':error'
+    if ticket.respond_to?(:priority)
+      trace "priority #{JSON.pretty_generate(ticket.priority.attrs)}"
+      c = case ticket.priority.attrs['name']
+      when /p1$/i ; ':p1'
+      when /p2$/i ; ':p2'
+      when /p3$/i ; ':p3'
+      when /p4$/i ; ':p4'
+      when /p5$/i ; ':p5'
+      else
+        ':error'
+      end
     end
     "<%= color(\"#{ticket.priority.attrs['name']}\", #{c}) %>"
-  end
 end
 
 class DummyProgressBar
