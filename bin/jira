@@ -1,0 +1,407 @@
+#!/usr/bin/env ruby
+
+require 'commander/import'
+require 'jira'
+require 'mongo_jira'
+require 'json'
+require 'ruby-progressbar'
+
+$config = "#{ENV['HOME']}/.mongo-jira.json"
+$level = 0
+tengen = HighLine::ColorScheme.new do |cs|
+  cs[:released] = [:bold, :green]
+  cs[:rc] = [:bold, :cyan]
+  cs[:error] = [:bold, :red]
+  cs[:password] = [:red]
+  cs[:dev_only] = [:bold, :reverse]
+  cs[:tengen] = [:bold, :green]
+  cs[:downloaded] = [:green]
+  cs[:p1] = [:bold, :red]
+  cs[:p2] = [:red]
+  cs[:p3] = [:cyan]
+  cs[:p4] = [:green]
+  cs[:p4] = [:green]
+end
+HighLine.color_scheme = tengen
+
+program :version, '0.0.0'
+program :description, 'Set of JIRA command line tools'
+program(:help, 'Common Errors',<<END)
+error: SSL_connect returned=1 errno=0 state=SSLv3 read server certificate B: certificate verify failed.
+    Try :
+
+        rvm osx-ssl-certs update all
+END
+
+program(:help, 'Reporting Errors',<<END)
+add --trace to the end of the command , re-run and email me the log.
+
+END
+
+program(:help, 'Supported Versions',<<END)
+I've tested the gem with the following ruby versions:
+
+       ruby-1.9.2
+       ruby-1.9.3
+       ruby-2.0.0
+
+    It does not work on 1.8.7 :
+
+	     activesupport requires Ruby version >= 1.9.3.
+
+END
+
+global_option('-c', '--creds FILE', 'Load config data for your commands to use') { |file| $config = file }
+global_option('-V', 'increment verbosity level, i.e. -VV for higher debug level') { $level += 1}
+
+default_command :projects
+
+command :init do |c|
+  c.syntax = 'jira init [options]'
+  c.summary = 'Run this command to initialize jira mongo gem'
+  c.description = 'This command will walk you through the account details that are needed.'
+  c.example 'description', 'jira init'
+  c.action do
+    if MongoJira::Config::check($config)
+      exit 1 unless agree("#{$config} exists, <%= color('Overwrite?', RED) %> ")
+      end
+
+    conf = {}
+    conf[:username] = prompt('username', 'jim.oleary@10gen.com')
+    conf[:password] = ask("password (<%= color('hit ENTER for none', :password) %>) ? ") { |q| q.echo = '*' }
+    conf[:site] = prompt('site', 'https://jira.mongodb.org')
+    conf[:auth_type] = prompt('auth_type', 'basic')
+    conf.delete(:password) if conf[:password].blank?
+
+    MongoJira::Config::save(conf, $config)
+  end
+end
+
+command :download do |c|
+  c.syntax = 'jira download <ticket>* [options]'
+  c.summary = 'download files attached to this ticket'
+  c.description=<<END
+Download all the files attached attached to a ticket.
+
+If no parameters are supplied then all new attachments will be downloaded. By default the file
+structure is flattened and the files are downloaded to the 'attachment' directory.
+
+If the '--force' flag is used then all or files matching a glob are downloaded (regardless of whether they
+are currently downloaded). By default the force pattern is a glob and '*' are prepended and appended to the glob.
+So the following 2 commands are equivalent :
+
+  $> jira download pr-1111
+  $> jira download pr-1111 pr-2222
+  $> jira download pr-1111 --force filename
+  $> jira download pr-1111 --force '*filename*'
+  $> jira download pr-1111 --force '*filename*' --to attachment
+
+Multiple patterns can also be supplied:
+
+  $> jira download pr-1111 --force filename1,file2
+END
+  c.example 'download all the new files from pr-1111', 'jira download pr-1111'
+  c.option '--dryrun', 'don\'t do the download just print what would happen '
+  c.option '-f','--[no-]flatten', 'flatten directory'
+  c.option '--silent', 'don\'t display progress'
+  c.option '--force [GLOBS]', String, 'force download of matching files'
+  c.option '--to LOCATION', String, 'download to LOCATION, defaults to ticket name'
+  c.action do |args,options|
+    options.default(:dryrun => false, :silent => false, :flatten=>true, :to=>nil)
+    if options.force.nil? || options.force.is_a?(TrueClass)
+      force = (options.force.nil? ? %w() : %w(*))
+    else
+      force = options.force.split(/[,\s]/).collect{|g| "*#{g.chomp}*"}
+    end
+
+    tids = args|| %w(.*)
+    tids.each do |tid|
+      ticket = client.find(tid)
+
+      unless ticket
+        puts "no ticket for #{tid}"
+        next
+      end
+      trace JSON.pretty_generate(ticket.attrs) if ticket
+
+      #noinspection RubyResolve
+      ticket.attachments.each do |attachment|
+        trace JSON.pretty_generate(attachment.attrs)
+        u = URI.parse(attachment.content)
+        parts = u.path.split('/')#[2..-1].join('/')
+        to = options.to.nil? ? tid  : parts[2]
+        trace "to -> #{to}"
+        if options.flatten
+          target = [to, parts.last]
+        else
+          target = [to, parts[3..-1]]
+        end
+        target = File.join(target.flatten)
+
+        trace target
+        size = attachment.attrs['size']
+        debug "checking #{target} => #{File.exists?(target)}"
+        if !force.any?{|g|File.fnmatch(g, target)} && File.exists?(target) && File.size(target) == size
+          say("<%= color('skipping', :downloaded) %> already downloaded '#{target}'")
+          next
+        end
+
+        name = target.split(%r{/}).last
+        title = name[0..14].ljust(15)
+        format = '%T %a |%b>%i|'
+        length= 80
+
+        pb = ProgressBar.create(:format => format,
+                                :title => title,
+                                :total => size,
+                                :throttle_rate => 0.1,
+                                :length => length)
+        pb = DummyProgressBar.new(size) if options.silent
+
+        progress=0
+        if options.dryrun
+          pb.format('%T |%b>%i|')
+          pb.title = name[0..29].ljust(30)
+          pb.progress=size
+        else
+          client.get(u.path) do |response|
+            FileUtils.mkdir_p(File::dirname(target))
+            debug u, ' => ', target
+            open target, 'w' do |io|
+              response.read_body do |chunk|
+                progress+=chunk.length
+                if progress == size
+                  pb.format('%T |%b>%i|')
+                  pb.title = name[0..29].ljust(30)
+                end
+                pb.progress=progress
+                io.write chunk
+              end
+            end
+          end
+        end
+      end
+
+    end
+  end
+end
+
+command :projects do |c|
+  c.syntax = 'jira projects <glob> [options]'
+  c.summary = 'list all the projects'
+  c.description = ''
+  c.example 'description', 'command example'
+  c.action do |args|
+    glob = args.first || '.*'
+    client.projects.each do |project|
+      say "#{project.key} - #{project.name}" if project.key =~ %r{#{glob}}
+    end
+  end
+end
+
+alias_command :test, :projects
+
+command :show do |c|
+  c.syntax = 'jira ticket <id>* [options]'
+  c.summary = 'view a ticket or list of tickets'
+  c.description= <<END
+
+  $> jira show pr-1111
+  $> jira ticket pr-1111
+  $> jira show pr-1111 pr-2222
+  $> jira show pr-1111 --reverse | less -R
+END
+  c.option '--reverse', 'print the comments in reverse order'
+  c.action do |args, options|
+    (args || %w(.*)).each do |tid|
+      ticket = client.find(tid)
+      next unless ticket
+      trace JSON.pretty_generate(ticket.attrs)
+      desc = Proc.new do
+        say <<END
+  #{header(ticket).join(' - ')}
+
+  #{('-' * 40)}
+
+  #{ticket.description}
+END
+      end
+
+      desc.call() unless  options.reverse
+
+      comments = ticket.comment['comments']
+      comments.reverse! if options.reverse
+      comments.each do |cmnt|
+        say <<END
+
+  #{'=' * 40}
+
+  #{comment(cmnt).join(' - ')}
+
+  #{cmnt['body']}
+END
+      end
+      desc.call() if  options.reverse
+    end
+  end
+end
+alias_command :ticket, :show
+
+command :open do |c|
+  c.syntax = 'jira open <ids>* [options]'
+  c.summary = 'open a ticket'
+  c.description = 'open a ticket in the browser'
+  c.example 'description', 'jira open pr-1111'
+  c.option '--some-switch', 'Some switch that does something'
+  c.action do |args|
+    (args || %w(.*)).each do |tid|
+      ticket = client.find(tid)
+      if ticket
+        trace JSON.pretty_generate(ticket.attrs)
+        %x{open 'https://jira.mongodb.org/browse/#{tid}'}
+      end
+    end
+  end
+end
+
+command :query do |c|
+  c.syntax = 'jira query <jql> [options]'
+  c.summary = 'run a jql query '
+  c.description =<<END
+Use JQL syntax to find tickets.
+
+Sample queries :
+    $> jira query 'project = CS AND labels = fs AND (Assignee is NULL) AND status = Open ORDER BY priority DESC' -> commercial support, no owner
+    $> jira query 'project = CS AND (Assignee is NULL) AND status = Open ORDER BY priority DESC' -> commercial support, no owner
+    $> jira query 'project in (CS, MMSSUPPORT) AND (Assignee is NULL) AND status = Open ORDER BY priority DESC' -> commercial support, no owner
+    $> jira query 'label = "fs"' -> find issues resolved by ME
+    $> jira query 'status WAS "Resolved" BY currentUser()' -> find issues resolved by ME
+    $> jira query 'assignee = currentUser() OR owner = currentUser() ' -> find issues resolved by ME
+    $> jira query 'owner = currentUser() AND status in  (open , "waiting for customer") '
+    $> jira query 'assignee is EMPTY AND status in  ("waiting for customer") ORDER BY updated DESC '
+END
+  c.example 'description', 'command example'
+  c.action do |args|
+    q = args.join(' ')
+    debug ":find '#{q}'"
+    client.jql(q).each do |ticket|
+      trace JSON.pretty_generate(ticket.attrs)
+      say header(ticket).join(' - ')
+    end
+  end
+end
+
+command :find do |c|
+  c.syntax = 'jira find <key words>'
+  c.summary = 'find ticket with keywords matching the following fields "summary description comment"'
+  c.description =<<END
+Find tickets by keywords
+
+Sample find:
+    $> jira find Test aggregation framework      # match any of the words
+    $> jira find 'Test aggregation framework'    # match any of the words
+    $> jira find '"Test aggregation framework"'  # match exact phrase
+END
+  c.action do |args|
+    pattern = args.join(' ')
+    q = %w{ summary description comment}.collect { |field| "#{field} ~ '#{pattern}'" }.join(' OR ')
+    debug ":find '#{q}'"
+    client.jql(q).each do |ticket|
+      trace JSON.pretty_generate(ticket.attrs)
+      say header(ticket).join(' - ')
+    end
+  end
+end
+
+def debug(*args)
+  puts args.join if $level > 0
+end
+
+def trace(*args)
+  puts args.join if $level > 1
+end
+
+def client(config=$config)
+  $jira ||= begin
+    jira = MongoJira::Jira.new(config)
+    jira.password = ask('Password:  ') { |q| q.echo = '*' } unless jira.password?
+    jira
+  rescue MongoJira::ConfigException
+    say("\n  <%= color('UNEXPECTED ERROR', :error) %>\n\n    conf file not found :: <%= color(\"#{config}\", RED) %>\n")
+    command(:help).run('init')
+    abort ''
+  end
+end
+
+# @param [Object] default
+def prompt(name, default=nil)
+  ask("#{name} (<%= color(\"#{default}\", RED) %>) ? ", lambda { |v| v.blank? ? default : v })
+end
+
+def header(ticket)
+  [ticket.key.ljust(15) ,ticket.summary , fix_versions(ticket), priority(ticket)].compact
+end
+
+def comment(comment)
+  hdr = "#{comment['author']['displayName']} (#{comment['author']['name']})"
+  hdr = "<%= color(\"#{hdr}\", :tengen) %>" if comment['author']['emailAddress'] =~ /@10gen.com$/
+
+  trace JSON.pretty_generate(comment)
+  dev_only = case (comment['visibility']||{})['value']
+               when /developer/i
+                 "<%= color('Dev Only', :dev_only) %>"
+               when /customer/i
+                 "<%= color('Customer Only', :dev_only) %>"
+               else
+                 nil
+             end
+
+  [hdr , DateTime.parse(comment['updated']).strftime('%D %T'), dev_only].compact
+end
+
+def fix_versions(ticket)
+  if ticket.try(:fixVersions)
+    trace "fixVersions #{JSON.pretty_generate(ticket.fixVersions)}"
+    unless ticket.fixVersions.compact.empty?
+      labels = ticket.fixVersions.collect do |v|
+        c = case v['name']
+              when /^\d+\.(0|2|4|6|8)/
+                ':released'
+              when /^\d+\.(1|3|5|7|9)/
+                ':rc'
+              else
+                ':error'
+            end
+        "<%= color(\"#{v['name']}\", #{c}) %>"
+      end
+      labels.join(',')
+    end
+  else
+    nil
+  end
+end
+
+def priority(ticket)
+  if ticket.respond_to?(:priority)
+    trace "priority #{JSON.pretty_generate(ticket.priority.attrs)}"
+    c = case ticket.priority.attrs['name']
+    when /p1$/i ; ':p1'
+    when /p2$/i ; ':p2'
+    when /p3$/i ; ':p3'
+    when /p4$/i ; ':p4'
+    when /p5$/i ; ':p5'
+    else
+      ':error'
+    end
+    "<%= color(\"#{ticket.priority.attrs['name']}\", #{c}) %>"
+  end
+end
+
+class DummyProgressBar
+  def initialize(s)
+    @size = s
+  end
+  def method_missing(meth, *args)
+    print '.' if meth.to_s == 'progress=' && args[0] == @size
+  end
+end
