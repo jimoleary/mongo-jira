@@ -14,18 +14,24 @@ Gem::Specification.new do |s|
   s.description = %q{Easy/Simple Jira command line tool}
   s.rubyforge_project = 'mongo_jira'
   s.signing_key = "#{ENV['HOME']}/.ssh/gem-private_key.pem"
-  s.cert_chain  = ["#{ENV['HOME']}/.ssh/gem-public_cert.pem"]
+  s.cert_chain  = %W(#{ENV['HOME']}/.ssh/gem-public_cert.pem)
 
  
   s.files         = `git ls-files`.split("\n")
   s.test_files    = `git ls-files -- {test,spec,features}/*`.split("\n")
   s.executables   = `git ls-files -- bin/*`.split("\n").map{ |f| File.basename(f) }
-  s.require_paths = ["lib"]
+  s.require_paths = %w(lib)
 
 
-  s.add_dependency 'jira-ruby'#,    ['>= 0.1.2']
+
   s.add_dependency 'commander'#,    ['>= 4.1.5']
   s.add_dependency 'ruby-progressbar'#,    ['>= 1.2.0']
   s.add_dependency 'xmpp4r'#,    ['>= 1.2.0']
   s.add_dependency 'erubis'#,    ['>= 1.2.0']
+  s.add_dependency 'jira-ruby'#,    ['>= 0.1.2']
+  s.add_development_dependency 'minitest'#,    ['>= 4.0.0']
+  s.add_development_dependency 'mocha'#,    ['>= 5.0.6']
+  #s.add_development_dependency 'simplecov'#,    ['>= 5.0.6']
+  #s.add_development_dependency 'simplecov-gem-adapter'
+  ##s.add_dependency 'simplecov'#,    ['>= 5.0.6']
 end

@@ -3,6 +3,7 @@
 require 'commander/import'
 require 'jira'
 require 'mongo/jira'
+require 'mongo/jira/jabber'
 require 'json'
 require 'ruby-progressbar'
 

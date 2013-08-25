@@ -1,6 +1,5 @@
 require 'mongo/jira/version'
 
-require 'mongo/jira/jabber'
 require 'mongo/jira/model/ticket'
 require 'mongo/jira/model/comment'
 require 'mongo/jira/render/view'
