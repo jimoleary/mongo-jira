@@ -353,9 +353,52 @@ END
 
     jabber(tickets, options)
     growler(tickets, options)
+
+    jabber(tickets, options)
+    growler(tickets, options)
   end
 end
 
+command :fixversions do |c|
+  c.syntax = 'jira fixversions [versions]*'
+  c.summary = 'find ticket fixed by version'
+  c.option '--from project1,project2', 'print plain results'
+  c.option '--to project1,project2', 'print plain results'
+
+  c.description =<<END
+Find tickets by keywords
+
+Sample find:
+    $> jira fixversions 2.4.6 2.4.5
+END
+  c.action do |args,options|
+    options.default(:from=>%w(SERVER), :to=>%w(CS))
+    puts "options.class '#{options}'"
+    puts options.__hash__
+    fv = args
+    debug ":fv '#{fv}'"
+
+    jql = "project in (#{options.from.join(',')}) and fixVersion in (#{fv.collect{|v|"\"#{v}\""}.join(',')})"
+    log(jql)
+    tickets = client.jql(jql)
+
+    jql = tickets.collect{|ticket|
+      "issue in linkedIssues(#{ticket.key},\"depends on\")"
+      "issue in linkedIssues(#{ticket.key})"
+    }.join(' or ')
+    jql = "project in (#{options.to.join(',')}) AND #{jql}"
+    log(jql)
+    tickets = client.jql(jql)
+
+    tickets.each do |ticket|
+      trace JSON.pretty_generate(ticket.attrs)
+      say render(ticket,{:reverse=>options.reverse, :view => $view}, ($as||:header))
+    end
+    #
+    #jabber(tickets, options)
+    #growler(tickets, options)
+  end
+end
 
 def limit(tickets,limit=nil)
   debug "limit #{tickets.length} -> #{limit}"
