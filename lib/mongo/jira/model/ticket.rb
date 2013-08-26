@@ -11,7 +11,7 @@ module Mongo
                   summary:ticket.summary ,
                   fix_versions:(ticket.try(:fixVersions) ? ticket.fixVersions.collect{|v|v["name"]} : []),
                   priority:ticket.priority.name,
-                  company: (ticket.send(COMPANY_FIELD)||{})['name'],
+                  company: ((ticket.send(COMPANY_FIELD) rescue nil)||{})['name'],
                   status:ticket.status.attrs['name'],
                   resolution:(ticket.resolution ? ticket.resolution['name'] : 'Unresolved'),
                   comments:ticket.comments.collect{|c|Mongo::Jira::Model::Comment.new(c)}

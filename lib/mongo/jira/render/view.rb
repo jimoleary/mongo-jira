@@ -11,8 +11,8 @@ module Mongo
           @opts =opts ||{}
           @opts.symbolize_keys!
           @loc = @opts[:loc]
-          @view= (@opts[:view] || 'terminal').to_s
-          @templates=@loc|| File.join(Gem::Specification.find_by_name('mongo-jira').gem_dir, 'lib', 'view')
+          #@view= (@opts[:view] || 'terminal').to_s
+          @templates=@loc #|| File.join(Gem::Specification.find_by_name('mongo-jira').gem_dir, 'lib', 'view')
           @context=@opts
         end
 
@@ -21,7 +21,8 @@ module Mongo
             clazz= o.class.to_s.split(/::/).last.downcase
             type ||= clazz
 
-            f = File.join(@templates, @view, type.to_s)
+            #f = File.join(@templates, @view, type.to_s)
+            f = File.join(@templates, type.to_s)
             f = "#{f}.erb" unless f.ends_with?('.erb')
 
             debug "view f #{f}"
@@ -44,53 +45,28 @@ module Mongo
         end
 
         module RenderMethods
-          def render_status(value)
-            return value if value.nil?
-            "<%= color(\"#{value}\", :#{value.gsub(/\s+/,'').downcase}) %>"
+          def cs(value)
+            s = value.gsub(/[\s+'-]+/,'').downcase.to_s
+            HighLine.color_scheme.keys.include?(s) ? s : 'unknown'
           end
-
-          def render_resolution(value)
+          def colorize(value,v=false)
             return value if value.nil?
-            "<%= color(\"#{value}\", :#{value.downcase}) %>"
-          end
 
-          def render_priority(value)
-            return value if value.nil?
-            c = case value
-                  when /p1$/i ; ':p1'
-                  when /p2$/i ; ':p2'
-                  when /p3$/i ; ':p3'
-                  when /p4$/i ; ':p4'
-                  when /p5$/i ; ':p5'
-                  else ':error'
-                end
-            "<%= color(\"#{value}\", #{c}) %>"
-          end
-
-          def render_versions(value)
-            return value if value.nil?
-            c = case value
-                  when /^\d+\.(0|2|4|6|8)/;
-                    ':released'
-                  when /^\d+\.(1|3|5|7|9)/;
-                    ':rc'
-                  else
-                    ; ':error'
-                end
-            "<%= color(\"#{value}\", #{c}) %>"
-          end
-
-          def render_dev_only(value, plain=false)
-            return value if value.nil? or !plain
-            case value
-              when /developer/i;
-                "<%= color('Dev Only', :dev_only) %>"
-              when /customer/i;
-                "<%= color('Customer Only', :dev_only) %>"
-              else
-                ; nil
+            if v
+              c = case value
+                    when /^\d+\.(0|2|4|6|8)/;
+                      'released'
+                    when /^\d+\.(1|3|5|7|9)/;
+                      'rc'
+                    else
+                      ; 'error'
+                  end
+            else
+              c = value
             end
+            "<%= color(\"#{value}\", '#{cs(c)}') %>"
           end
+
         end
       end
     end

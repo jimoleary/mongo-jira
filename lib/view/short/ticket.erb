@@ -1,1 +1,1 @@
-<%= @ticket.key.ljust(15) %> - <%= @ticket.summary %><%= @ticket.fix_versions.empty? ? '' : "  - (#{@ticket.fix_versions.collect{|p| render_versions(p)}.join(',')})" %> - <%= @ticket.priority %>
+<%= @ticket.key.ljust(15) %> - <%= @ticket.summary %><%= @ticket.fix_versions.empty? ? '' : "  - (#{@ticket.fix_versions.collect{|p| colorize(p,true)}.join(',')})" %> - <%= @ticket.priority %>

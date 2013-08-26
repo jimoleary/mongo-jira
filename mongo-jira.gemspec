@@ -29,9 +29,10 @@ Gem::Specification.new do |s|
   s.add_dependency 'xmpp4r'#,    ['>= 1.2.0']
   s.add_dependency 'erubis'#,    ['>= 1.2.0']
   s.add_dependency 'jira-ruby'#,    ['>= 0.1.2']
+  s.add_dependency 'growl'#,    ['>= 0.1.2']
   s.add_development_dependency 'minitest'#,    ['>= 4.0.0']
   s.add_development_dependency 'mocha'#,    ['>= 5.0.6']
   #s.add_development_dependency 'simplecov'#,    ['>= 5.0.6']
   #s.add_development_dependency 'simplecov-gem-adapter'
-  ##s.add_dependency 'simplecov'#,    ['>= 5.0.6']
+  #s.add_dependency 'simplecov'#,    ['>= 5.0.6']
 end

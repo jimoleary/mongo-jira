@@ -4,4 +4,5 @@ require 'rake/testtask'
 Rake::TestTask.new(:spec) do |t|
   t.libs << ['spec', File.expand_path('../', __FILE__)]
   t.pattern = 'spec/**/*_spec.rb'
+  #t.pattern = 'spec/**/show_spec.rb'
 end

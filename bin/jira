@@ -4,6 +4,7 @@ require 'commander/import'
 require 'jira'
 require 'mongo/jira'
 require 'mongo/jira/jabber'
+require 'mongo/jira/commands'
 require 'json'
 require 'ruby-progressbar'
 
@@ -14,26 +15,37 @@ tengen = HighLine::ColorScheme.new do |cs|
   cs[:rc] = [:bold, :cyan]
   cs[:error] = [:bold, :red]
   cs[:password] = [:red]
-  cs[:Developers] = [:bold, :reverse, :green]
-  cs[:Customers] = [:bold, :reverse, :red]
-  cs[:Everybody] = [:bold]
+  cs[:developers] = [:bold, :reverse, :green]
+  cs[:customers] = [:bold, :reverse, :red]
+  cs[:everybody] = [:bold]
 
   cs[:tengen] = [:bold, :green]
   cs[:customer] = []
   cs[:downloaded] = [:green]
-  cs[:p1] = [:bold, :red]
-  cs[:p2] = [:red]
-  cs[:p3] = [:cyan]
-  cs[:p4] = [:green]
-  cs[:p5] = [:green]
+  cs[:blockerp1] = [:bold, :red]
+  cs[:criticalp2] = [:red]
+  cs[:majorp3] = [:cyan]
+  cs[:minorp4] = [:green]
+  cs[:trivialp5] = [:green]
 
   cs[:unresolved] = [:bold, :red]
+  cs[:unknown] = [:bold, :red]
   cs[:fixed] = [:bold, :green]
   cs[:inprogress] = [:bold, :green]
   cs[:waitingforcustomer] = [:bold, :reverse, :red]
   cs[:open] = [:reverse, :red]
   cs[:closed] = [:bold, :reverse, :green]
   cs[:resolved] = [:bold, :reverse, :green]
+  cs[:duplicate] = [:bold, :reverse, :green]
+  cs[:incomplete] = [:bold, :reverse, :green]
+  cs[:goneaway] = [:bold, :reverse, :green]
+  cs[:waitingforbugfix] = [:bold, :reverse, :green]
+  cs[:worksasdesigned] = [:bold, :reverse, :green]
+  cs[:wontfix] = [:bold, :reverse, :green]
+  cs[:cannotreproduce] = [:bold, :reverse, :green]
+  cs[:incodereview] = [:bold, :reverse, :green]
+  cs[:waitingforuserinput] = [:bold, :reverse, :green]
+
 end
 HighLine.color_scheme = tengen
 
@@ -95,24 +107,15 @@ global_option('--as type', 'render as view can be header, ticket,id') {|as| $as=
 
 default_command :show
 
+commands = Mongo::Jira::Commands.new
+
 command :init do |c|
   c.syntax = 'jira init [options]'
   c.summary = 'Run this command to initialize jira mongo gem'
   c.description = 'This command will walk you through the account details that are needed.'
   c.example 'description', 'jira init'
   c.action do
-    if Mongo::Jira::Config::check($config)
-      exit 1 unless agree("#{$config} exists, <%= color('Overwrite?', RED) %> ")
-    end
-
-    conf = {}
-    conf[:username] = prompt('username', 'jim.oleary@10gen.com')
-    conf[:password] = ask("password (<%= color('hit ENTER for none', :password) %>) ? ") { |q| q.echo = '*' }
-    conf[:site] = prompt('site', 'https://jira.mongodb.org')
-    conf[:auth_type] = prompt('auth_type', 'basic')
-    conf.delete(:password) if conf[:password].blank?
-
-    Mongo::Jira::Config::save(conf, $config)
+    commands.init($config)
   end
 end
 
@@ -155,73 +158,7 @@ END
 
     tids = args|| %w(.*)
     tids.each do |tid|
-      ticket = client.find(tid)
-
-      unless ticket
-        puts "no ticket for #{tid}"
-        next
-      end
-      trace JSON.pretty_generate(ticket.attrs) if ticket
-
-      trace "options #{options.to}"
-      #noinspection RubyResolve
-      ticket.attachments.each do |attachment|
-        trace JSON.pretty_generate(attachment.attrs)
-        u = URI.parse(attachment.content)
-        parts = u.path.split('/')#[2..-1].join('/')
-        to = options.to.nil? ? tid  : options.to
-        trace "to -> #{to}"
-        if options.flatten
-          target = [to, parts.last]
-        else
-          target = [to, parts[3..-1]]
-        end
-        target = File.join(target.flatten)
-
-        trace target
-        size = attachment.attrs['size']
-        debug "checking #{target} => #{File.exists?(target)}"
-        if !force.any?{|g|File.fnmatch(g, target)} && File.exists?(target) && File.size(target) == size
-          say("<%= color('skipping', :downloaded) %> already downloaded '#{target}'")
-          next
-        end
-
-        name = target.split(%r{/}).last
-        title = name[0..14].ljust(15)
-        format = '%T %a |%b>%i|'
-        length= 80
-
-        pb = ProgressBar.create(:format => format,
-                                :title => title,
-                                :total => size,
-                                :throttle_rate => 0.1,
-                                :length => length)
-        pb = DummyProgressBar.new(size) if options.silent
-
-        progress=0
-        if options.dryrun
-          pb.format('%T |%b>%i|')
-          pb.title = name[0..29].ljust(30)
-          pb.progress=size
-        else
-          client.get(u.path) do |response|
-            FileUtils.mkdir_p(File::dirname(target))
-            debug u, ' => ', target
-            open target, 'w' do |io|
-              response.read_body do |chunk|
-                progress+=chunk.length
-                if progress == size
-                  pb.format('%T |%b>%i|')
-                  pb.title = name[0..29].ljust(30)
-                end
-                pb.progress=progress
-                io.write chunk
-              end
-            end
-          end
-        end
-      end
-
+      commands.download(tid,options.__hash__.merge({limit:$limit, as:$as, force:force}))
     end
   end
 end
@@ -237,12 +174,7 @@ command :projects do |c|
     else
       globs = args.collect{|g| "*#{g.chomp}*"}
     end
-
-    all = client.projects
-    projects = all.find_all{|p| globs.any?{|g|File.fnmatch(g, p.key)} }
-    projects= limit(projects, $limit)
-
-    say render(projects,{:reverse=>options.reverse, :view => $view},($as ||:project))
+    commands.projects(globs,options.__hash__.merge({limit:$limit,as:$as}))
   end
 end
 
@@ -265,14 +197,10 @@ END
       next
     end
 
-    tickets = args.collect {|tid| client.find(tid)}.tap{|t| trace JSON.pretty_generate(t.attrs)}
-    tickets = limit(tickets, $limit)
+    tickets = commands.show(args,options.__hash__.merge({limit:$limit, as:($as)||'terminal/ticket'}))
 
-    tickets.each do |ticket|
-      say render(Mongo::Jira::Model::Ticket.new(ticket),{:reverse=>options.reverse, :view => $view},($as ||:ticket))
-    end
-    jabber(tickets, options)
-    growler(tickets, options)
+    jabber(commands,tickets, options)
+    growler(commands,tickets, options)
   end
 end
 alias_command :ticket, :show
@@ -284,17 +212,12 @@ command :open do |c|
   c.example 'description', 'jira open pr-1111'
   c.option '--some-switch', 'Some switch that does something'
   c.action do |args, options|
-    tickets = (args || %w(.*)).collect  {|tid| client.find(tid) }
+    tids = (args || %w(.*))
 
-    tickets = limit(tickets, $limit)
+    tickets = commands.open(tids,options.__hash__.merge({limit:$limit, as:$as}))
 
-    tickets.each do |ticket|
-      trace JSON.pretty_generate(ticket.attrs)
-      %x{open 'https://jira.mongodb.org/browse/#{ticket.key}'}
-    end
-
-    jabber(tickets, options)
-    growler(tickets, options)
+    jabber(commands,tickets, options)
+    growler(commands,tickets, options)
   end
 end
 
@@ -316,15 +239,10 @@ Sample queries :
 END
   c.example 'description', 'command example'
   c.action do |args, options|
-    q = args.join(' ')
-    debug ":find '#{q}'"
-    all = query(q)
-    tickets = limit(all,$limit)
+    tickets = commands.query(args,options.__hash__.merge({limit:$limit, as:$as}))
 
-    tickets.each{|ticket| say render(Mongo::Jira::Model::Ticket.new(ticket),{:reverse=>options.reverse, :view => $view}, ($as || :header))}
-
-    jabber(tickets, options)
-    growler(tickets, options)
+    jabber(commands,tickets, options)
+    growler(commands,tickets, options)
   end
 end
 
@@ -339,24 +257,12 @@ Sample find:
     $> jira find 'Test aggregation framework'    # match any of the words
     $> jira find '"Test aggregation framework"'  # match exact phrase
 END
-  c.action do |args|
-    pattern = args.join(' ')
-    q = %w{ summary description comment}.collect { |field| "#{field} ~ '#{pattern}'" }.join(' OR ')
-    debug ":find '#{q}'"
-    all = client.jql(q).collect
+  c.action do |args,options|
+    tickets = commands.find(args,options.__hash__.merge({limit:$limit, as:$as}))
 
-    tickets = limit(all,$limit)
+    jabber(commands,tickets, options)
+    growler(commands,tickets, options)
 
-    tickets.each do |ticket|
-      trace JSON.pretty_generate(ticket.attrs)
-      say render(Mongo::Jira::Model::Ticket.new(ticket),{:reverse=>options.reverse, :view => $view}, ($as ||:header))
-    end
-
-    jabber(tickets, options)
-    growler(tickets, options)
-
-    jabber(tickets, options)
-    growler(tickets, options)
   end
 end
 
@@ -374,57 +280,15 @@ Sample find:
 END
   c.action do |args,options|
     options.default(:from=>%w(SERVER), :to=>%w(CS))
-    puts "options.class '#{options}'"
-    puts options.__hash__
-    fv = args
-    debug ":fv '#{fv}'"
 
-    jql = "project in (#{options.from.join(',')}) and fixVersion in (#{fv.collect{|v|"\"#{v}\""}.join(',')})"
-    log(jql)
-    tickets = client.jql(jql)
+    tickets = commands.fixversions(args,options.__hash__.merge({limit:$limit, as:$as}))
 
-    jql = tickets.collect{|ticket|
-      "issue in linkedIssues(#{ticket.key},\"depends on\")"
-      "issue in linkedIssues(#{ticket.key})"
-    }.join(' or ')
-    jql = "project in (#{options.to.join(',')}) AND #{jql}"
-    log(jql)
-    tickets = client.jql(jql)
-
-    tickets.each do |ticket|
-      trace JSON.pretty_generate(ticket.attrs)
-      say render(ticket,{:reverse=>options.reverse, :view => $view}, ($as||:header))
-    end
-    #
-    #jabber(tickets, options)
-    #growler(tickets, options)
+    jabber(commands,tickets, options)
+    growler(commands,tickets, options)
   end
 end
 
-def limit(tickets,limit=nil)
-  debug "limit #{tickets.length} -> #{limit}"
-  tickets = [tickets].flatten.compact
-  return tickets if tickets.empty? || limit.nil?
-  limit = limit.to_i - 1
-  debug "limit #{tickets.length} -> #{limit}"
-  t = if limit <=0
-    [tickets.first]
-  else
-    tickets[0..limit]
-  end
-  debug "limit #{t.length} -> #{limit}"
-  t
-end
-
-def query(q,plain=false)
-  debug "plain = #{plain}"
-  client.jql(q).collect do |ticket|
-    trace JSON.pretty_generate(ticket.attrs)
-    ticket
-  end
-end
-
-def jabber(tickets,options)
+def jabber(commands,tickets,options)
   return if tickets.empty?
 
   jconf = nil
@@ -438,20 +302,20 @@ def jabber(tickets,options)
 
   if j
     message = tickets.collect{|ticket|
-      render(Mongo::Jira::Model::Ticket.new(ticket),{:reverse=>options.reverse, :view => $view}, ($as ||:id))
+      commands.render(Mongo::Jira::Model::Ticket.new(ticket),{:reverse=>options.reverse, :as =>(options[:as] ||'jabber/ticket')})
     }
     j.talk(jconf[:to], 'new tickets' , message.join("\n"))
   end
 end
 
-def growler(tickets,options)
+def growler(commands,tickets,options)
   return if tickets.empty?
 
   $growl.flatten!
   $growl.uniq!
   if $growl.length > 0
     tickets.each{|ticket|
-      message = render(Mongo::Jira::Model::Ticket.new(ticket),{:reverse=>options.reverse, :view => 'growler'}, ($as ||:ticket))
+      message = commands.render(Mongo::Jira::Model::Ticket.new(ticket),{:reverse=>options.reverse, :as =>(options[:as] ||'growler/ticket')})
       $growl.each{|host|notify_info(message , :host=>host)}
     }
   end
@@ -483,40 +347,8 @@ def info(*args)
   puts (args||['no args']).join if $level >= INFO
 end
 
-def client(config=$config)
-  $jira ||= begin
-    jira = Mongo::Jira::Main.new(config)
-    jira.password = ask('Password:  ') { |q| q.echo = '*' } unless jira.password?
-    jira
-  rescue Mongo::Jira::ConfigException
-    say("\n  <%= color('UNEXPECTED ERROR', :error) %>\n\n    conf file not found :: <%= color(\"#{config}\", RED) %>\n")
-    command(:help).run('init')
-    abort ''
-  end
-end
-
 # @param [Object] default
 def prompt(name, default=nil)
   ask("#{name} (<%= color(\"#{default}\", RED) %>) ? ", lambda { |v| v.blank? ? default : v })
 end
 
-def render(ticket, o={},type=nil)
-  @renderer ||= Mongo::Jira::Render::View.new()
-  @renderer.options = o
-  @renderer.render(ticket,type)
-end
-
-class Object
-  def try(name,*args)
-    self.send(name,args) rescue nil
-  end
-end unless self.respond_to?(:try)
-
-class DummyProgressBar
-  def initialize(s)
-    @size = s
-  end
-  def method_missing(meth, *args)
-    print '.' if meth.to_s == 'progress=' && args[0] == @size
-  end
-end
