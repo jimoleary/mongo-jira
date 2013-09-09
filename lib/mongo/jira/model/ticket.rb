@@ -9,7 +9,7 @@ module Mongo
                   description:ticket.description,
                   status:ticket.status.name,
                   summary:ticket.summary ,
-                  fix_versions:(ticket.try(:fixVersions) ? ticket.fixVersions.collect{|v|v["name"]} : []),
+                  fix_versions:(ticket.respond_to?(:fixVersions) ? ticket.fixVersions.collect{|v|v["name"]} : []),
                   priority:ticket.priority.name,
                   company: ((ticket.send(COMPANY_FIELD) rescue nil)||{})['name'],
                   status:ticket.status.attrs['name'],

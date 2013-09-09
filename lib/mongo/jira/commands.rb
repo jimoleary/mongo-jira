@@ -1,9 +1,3 @@
-class Object
-  def try(name, *args)
-    self.send(name, args) rescue nil
-  end
-end unless self.respond_to?(:try)
-
 module Mongo
 
   #noinspection ALL
