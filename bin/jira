@@ -49,7 +49,7 @@ tengen = HighLine::ColorScheme.new do |cs|
 end
 HighLine.color_scheme = tengen
 
-program :version, '0.0.0'
+program :version, Mongo::Jira::VERSION
 program :description, 'Set of JIRA command line tools'
 program(:help, 'Common Errors',<<END)
 error: SSL_connect returned=1 errno=0 state=SSLv3 read server certificate B: certificate verify failed.
