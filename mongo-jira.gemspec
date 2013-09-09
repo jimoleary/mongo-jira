@@ -13,8 +13,10 @@ Gem::Specification.new do |s|
   s.summary = %q{Simple Mongo Jira command line tools}
   s.description = %q{Easy/Simple Jira command line tool}
   s.rubyforge_project = 'mongo_jira'
-  s.signing_key = "#{ENV['HOME']}/.ssh/gem-private_key.pem"
-  s.cert_chain  = %W(#{ENV['HOME']}/.ssh/gem-public_cert.pem)
+
+  # allow a local version to be built without the signing keys
+  s.signing_key = "#{ENV['HOME']}/.ssh/gem-private_key.pem" if File.exists?("#{ENV['HOME']}/.ssh/gem-private_key.pem")
+  s.cert_chain  = %W(#{ENV['HOME']}/.ssh/gem-public_cert.pem) if File.exists?("#{ENV['HOME']}/.ssh/gem-public_cert.pem")
 
  
   s.files         = `git ls-files`.split("\n")
