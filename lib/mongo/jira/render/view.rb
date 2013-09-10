@@ -11,8 +11,7 @@ module Mongo
           @opts =opts ||{}
           @opts.symbolize_keys!
           @loc = @opts[:loc]
-          #@view= (@opts[:view] || 'terminal').to_s
-          @templates=@loc #|| File.join(Gem::Specification.find_by_name('mongo-jira').gem_dir, 'lib', 'view')
+          @templates=@loc
           @context=@opts
         end
 
@@ -21,7 +20,6 @@ module Mongo
             clazz= o.class.to_s.split(/::/).last.downcase
             type ||= clazz
 
-            #f = File.join(@templates, @view, type.to_s)
             f = File.join(@templates, type.to_s)
             f = "#{f}.erb" unless f.ends_with?('.erb')
 

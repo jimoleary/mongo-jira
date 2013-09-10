@@ -72,6 +72,47 @@ add --trace to the end of the command , re-run and email me the log.
 
 END
 
+program(:help, 'Render Templates/--as',<<END)
+The default render template depends on the type of object being processed, normally it will be 'terminal/ticket.erb' or 'terminal/project.erb'
+
+    You can change the way the objects are rendered using the '--as' parameter
+
+    For example, the following will be rendered using terminal/header.erb:
+        $> jira PR-3 --as header
+        PR-3            - description  - Major - P3 -  - Closed - Fixed
+
+    For example, if you just want a list of the ticket ids, the following find query will render the tickets using terminal/id.erb:
+        $> jira find search terms --as id
+        PR-3
+        PR-4
+        PR-5
+        PR-6
+
+    To render a ticket with short/ticket.erb use the following invocation:
+        $> jira PR-3 --as short/ticket
+        PR-3            - description  - Major - P3
+
+    There are also some default jabber and growler templates:
+        $> jira PR-3 --as jabber/ticket
+        PR-3            - Description - Closed
+
+        $> jira PR-3 --as growler/ticket
+        PR-3 - Minor - P4
+        description
+        company
+
+    To use your own erb templates, the following will be rendered using ./header.erb:
+        $> jira PR-3 --as /tmp/template #<- absolute path
+        $> jira PR-3 --as ./template    #<- relative path
+        PR-3            - summary
+
+    Where template.erb looks like (note the @ var name is the same as the file name, so don't put spaces in it ;-):
+
+        <%%= @template.key.ljust(15) %> - <%%= @template.summary %>
+
+    Look in '#{File.join(Gem::Specification.find_by_name('mongo-jira').gem_dir, 'lib', 'view')}' for the default templates
+END
+
 program(:help, 'Supported Versions',<<END)
 I've tested the gem with the following ruby versions:
 
@@ -90,7 +131,6 @@ $jabberrc=nil
 $jabber=nil
 $limit=nil
 $growl=[]
-$view='terminal'
 
 global_option('-c', '--creds FILE', 'Load config data for your commands to use') { |file| $config = file }
 global_option('-V', 'increment verbosity level, i.e. -VV for higher debug level') { $level += 1}
@@ -102,8 +142,7 @@ global_option('--limit [limit]', 'limit the results set ') {|limit|$limit=limit}
 global_option('--growl', 'growl the results set to localhost') {$growl<<%w(localhost)}
 global_option('--growl-to=a,b,c',Array, 'growl the results set ') {|hosts| $growl<<[hosts]}
 
-global_option('--view view', 'render with terminal,plain,short') {|view| $view=view}
-global_option('--as type', 'render as view can be header, ticket,id') {|as| $as=as}
+global_option('--as type', 'render using the template. See the Render Templates section') {|as| $as=as}
 
 default_command :show
 
